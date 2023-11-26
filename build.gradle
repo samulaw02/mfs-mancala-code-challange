@@ -1,0 +1,154 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+
+plugins {
+    id 'org.springframework.boot' version '2.5.6'
+    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+    id 'java'
+    id 'com.github.node-gradle.node' version '3.1.1'
+}
+
+apply plugin: 'io.spring.dependency-management'
+
+group = 'com.game'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '11'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+node {
+    // Version of node to use.
+    version = '16.13.0'
+    npmVersion = '8.1.0'
+
+    // Version of Yarn to use
+    // Any Yarn task first installs Yarn in the yarnWorkDir
+    // It uses the specified version if defined and the latest version otherwise (by default)
+    yarnVersion = ''
+
+    // Base URL for fetching node distributions (change if you have a mirror).
+    distBaseUrl = 'https://nodejs.org/dist'
+
+    // If true, it will download node using above parameters.
+    // If false, it will try to use globally installed node.
+    download = true
+
+    // Set the work directory for unpacking node
+    workDir = file("${project.buildDir}/src/main/frontend/nodejs")
+
+    // Set the work directory for NPM
+    npmWorkDir = file("${project.buildDir}/src/main/frontend/npm")
+
+    // Set the work directory where node_modules should be located
+    nodeModulesDir = file("${project.projectDir}/src/main/frontend")
+
+    // The directory where yarn is installed (when a Yarn task is used)
+    yarnWorkDir = file("${project.projectDir}/.gradle/yarn")
+
+    // The Node.js project directory location
+    // This is where the package.json file and node_modules directory are located
+    // By default it is at the root of the current project
+    nodeProjectDir = file("${project.projectDir}/src/main/frontend")
+
+    // Whether the plugin automatically should add the proxy configuration to npm and yarn commands
+    // according the proxy configuration defined for Gradle
+    // Disable this option if you want to configure the proxy for npm or yarn on your own
+    // (in the .npmrc file for instance)
+    nodeProxySettings = ProxySettings.SMART
+}
+
+
+task yarnBuild(type: YarnTask) {
+    execOverrides {
+        it.workingDir = 'src/main/frontend'
+    }
+    args = ['build']
+}
+
+task executeYarn(type: GradleBuild) {
+    tasks = ['yarnInstallDependencies', 'yarnBuild', 'copyFrontendToBuild']
+}
+
+
+task copyFrontendToBuild(type: Copy) {
+    from "$projectDir/src/main/frontend/build/"
+    into "$buildDir/resources/main/static"
+}
+
+task npmInstallDependencies(type: NpmTask) {
+    dependsOn 'nodeSetup'
+    dependsOn 'npmSetup'
+    execOverrides {
+        it.ignoreExitValue = true
+        it.workingDir = 'src/main/frontend'
+    }
+    args = ['install']
+}
+
+task yarnInstallDependencies(type: YarnTask) {
+    execOverrides {
+//        it.ignoreExitValue = true
+        it.workingDir = 'src/main/frontend'
+    }
+    args = ['install']
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.projectlombok:lombok:1.18.20'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'io.springfox:springfox-swagger2:2.9.2'
+    implementation 'io.springfox:springfox-swagger-ui:2.9.2'
+    testImplementation 'org.apache.httpcomponents:httpclient'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.withType(Test) {
+    testLogging {
+        // set options for log level LIFECYCLE
+        events TestLogEvent.FAILED,
+                TestLogEvent.PASSED,
+                TestLogEvent.SKIPPED,
+                TestLogEvent.STANDARD_OUT
+        exceptionFormat TestExceptionFormat.FULL
+        showExceptions true
+        showCauses true
+        showStackTraces true
+
+        // set options for log level DEBUG and INFO
+        debug {
+            events TestLogEvent.STARTED,
+                    TestLogEvent.FAILED,
+                    TestLogEvent.PASSED,
+                    TestLogEvent.SKIPPED,
+                    TestLogEvent.STANDARD_ERROR,
+                    TestLogEvent.STANDARD_OUT
+            exceptionFormat TestExceptionFormat.FULL
+        }
+        info.events = debug.events
+        info.exceptionFormat = debug.exceptionFormat
+
+        afterSuite { desc, result ->
+            if (!desc.parent) { // will match the outermost suite
+                def output = "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} passed, ${result.failedTestCount} failed, ${result.skippedTestCount} skipped)"
+                def startItem = '|  ', endItem = '  |'
+                def repeatLength = startItem.length() + output.length() + endItem.length()
+                println('\n' + ('-' * repeatLength) + '\n' + startItem + output + endItem + '\n' + ('-' * repeatLength))
+            }
+        }
+    }
+}
